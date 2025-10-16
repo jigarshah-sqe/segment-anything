@@ -284,68 +284,48 @@ def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="
     # Load SAM model (vit_b for both approaches)
     sam_b = load_sam_models(device=device)
     
-    # Run all 3 approaches sequentially
-    logger.info("Running all 3 segmentation approaches sequentially...")
+    # Run 2 approaches sequentially (removed Full SAM)
+    logger.info("Running 2 segmentation approaches sequentially...")
     
     # 1. Manual annotations (already have)
     manual_count = len(coal_annotations)
     
-    # 2. Full SAM segmentation
-    logger.info("Running Full SAM segmentation...")
-    full_sam_masks = run_full_sam_segmentation(image, sam_b, device)
-    full_sam_count = len(full_sam_masks)
-    
-    # 3. SAHI-enhanced SAM segmentation
+    # 2. SAHI-enhanced SAM segmentation only
     logger.info("Running SAHI-enhanced SAM segmentation...")
     roi_crop = (956, 20, 2986, 2118)
     sahi_masks, roi_crop = run_sahi_sam_segmentation(image, sam_b, roi_crop, device)
     sahi_count = len(sahi_masks)
     
-    # Create comprehensive visualization
-    logger.info("Creating 3-way comparison visualization...")
+    # Create simplified 2x2 visualization
+    logger.info("Creating 2-way comparison visualization...")
     
-    fig, axes = plt.subplots(2, 3, figsize=(24, 16))
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
     
-    # Row 1: Original and Manual
+    # Original image
     axes[0, 0].imshow(image)
     axes[0, 0].set_title('Original Image', fontsize=14, fontweight='bold')
     axes[0, 0].axis('off')
     
+    # Original image with manual annotations
     axes[0, 1].imshow(image)
     show_manual_annotations(coal_annotations, axes[0, 1], color='red', alpha=0.4)
     axes[0, 1].set_title(f'Manual COAL Annotations\n({manual_count} objects)', fontsize=14, fontweight='bold')
     axes[0, 1].axis('off')
     
     # Show ROI for SAHI
-    axes[0, 2].imshow(image)
-    x1, y1, x2, y2 = roi_crop
-    axes[0, 2].add_patch(plt.Rectangle((x1, y1), x2-x1, y2-y1, 
-                                       edgecolor='yellow', facecolor=(0,0,0,0), linewidth=3))
-    axes[0, 2].set_title('SAHI ROI Region\n(Yellow rectangle)', fontsize=14, fontweight='bold')
-    axes[0, 2].axis('off')
-    
-    # Row 2: SAM Results
     axes[1, 0].imshow(image)
-    for i, mask_info in enumerate(full_sam_masks):
-        mask = mask_info['segmentation']
-        show_mask(mask, axes[1, 0], random_color=True, alpha=0.6)
-    axes[1, 0].set_title(f'Full SAM Segmentation\n({full_sam_count} objects)', fontsize=14, fontweight='bold')
+    x1, y1, x2, y2 = roi_crop
+    axes[1, 0].add_patch(plt.Rectangle((x1, y1), x2-x1, y2-y1, 
+                                       edgecolor='yellow', facecolor=(0,0,0,0), linewidth=3))
+    axes[1, 0].set_title('SAHI ROI Region\n(Yellow rectangle)', fontsize=14, fontweight='bold')
     axes[1, 0].axis('off')
     
+    # SAHI-enhanced SAM segmentation
     axes[1, 1].imshow(image)
     for i, mask in enumerate(sahi_masks):
         show_mask(mask, axes[1, 1], random_color=True, alpha=0.6)
     axes[1, 1].set_title(f'SAHI-Enhanced SAM\n({sahi_count} large coals)', fontsize=14, fontweight='bold')
     axes[1, 1].axis('off')
-    
-    # Combined comparison
-    axes[1, 2].imshow(image)
-    # Overlay all results with different colors
-    for i, mask_info in enumerate(full_sam_masks[:10]):  # Limit to first 10 for visibility
-        mask = mask_info['segmentation']
-        show_mask(mask, axes[1, 2], random_color=True, alpha=0.3)
-    axes[1, 2].set_title(f'Combined View\n(All detections)', fontsize=14, fontweight='bold')
-    axes[1, 2].axis('off')
     
     # Save results
     image_name = Path(image_path).stem
@@ -361,7 +341,6 @@ def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="
     logger.info("SEGMENTATION COMPARISON SUMMARY")
     logger.info("="*60)
     logger.info(f"Manual annotations:     {manual_count:3d} COAL objects")
-    logger.info(f"Full SAM detection:     {full_sam_count:3d} objects")
     logger.info(f"SAHI-enhanced SAM:      {sahi_count:3d} large coals")
     logger.info("="*60)
     
@@ -371,9 +350,66 @@ def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
+def process_all_images(annotations_data, images_dir, output_dir, device="cpu"):
+    """Process all images in the images directory."""
+    
+    # Get all image files
+    image_files = []
+    for root, dirs, files in os.walk(images_dir):
+        for file in files:
+            if file.lower().endswith(('.jpg', '.jpeg', '.png')):
+                image_files.append(os.path.join(root, file))
+    
+    logger.info(f"Found {len(image_files)} images to process")
+    
+    # Create mapping from filename to image_id
+    filename_to_id = {}
+    for image_info in annotations_data['images']:
+        filename_to_id[image_info['file_name']] = image_info['id']
+    
+    processed_count = 0
+    failed_count = 0
+    
+    for i, image_path in enumerate(image_files, 1):
+        try:
+            # Get relative path and filename
+            rel_path = os.path.relpath(image_path, images_dir)
+            filename = os.path.basename(image_path)
+            
+            # Find corresponding image_id
+            image_id = filename_to_id.get(rel_path)
+            if image_id is None:
+                logger.warning(f"No annotations found for {rel_path}, skipping...")
+                continue
+            
+            logger.info(f"Processing image {i}/{len(image_files)}: {filename}")
+            logger.info(f"Image ID: {image_id}")
+            
+            # Create output directory for this image
+            image_output_dir = os.path.join(output_dir, os.path.splitext(filename)[0])
+            
+            # Run enhanced comparison
+            run_enhanced_comparison(image_path, annotations_data, image_id, image_output_dir, device)
+            
+            processed_count += 1
+            logger.info(f"✅ Successfully processed: {filename}")
+            
+        except Exception as e:
+            failed_count += 1
+            logger.error(f"❌ Failed to process {image_path}: {e}")
+            continue
+    
+    logger.info("="*60)
+    logger.info("BATCH PROCESSING SUMMARY")
+    logger.info("="*60)
+    logger.info(f"Total images found: {len(image_files)}")
+    logger.info(f"Successfully processed: {processed_count}")
+    logger.info(f"Failed: {failed_count}")
+    logger.info("="*60)
+
 def main():
     parser = argparse.ArgumentParser(description="Enhanced SAM comparison for COAL segmentation")
-    parser.add_argument("--image-id", type=int, default=1, help="Image ID to process")
+    parser.add_argument("--image-id", type=int, default=None, help="Single image ID to process (optional)")
     parser.add_argument("--annotations", default="sample/annotations/instances_default.json", 
                        help="Path to annotations JSON file")
     parser.add_argument("--images-dir", default="sample/images/default", 
@@ -381,6 +417,8 @@ def main():
     parser.add_argument("--output-dir", default="./sam_enhanced_output", 
                        help="Output directory for results")
     parser.add_argument("--device", default="cpu", help="Device to run on (cuda/cpu)")
+    parser.add_argument("--all-images", action="store_true", 
+                       help="Process all images in the directory")
     
     args = parser.parse_args()
     
@@ -389,28 +427,37 @@ def main():
     with open(args.annotations, 'r') as f:
         annotations_data = json.load(f)
     
-    # Find image filename
-    image_filename = None
-    for image_info in annotations_data['images']:
-        if image_info['id'] == args.image_id:
-            image_filename = image_info['file_name']
-            break
-    
-    if not image_filename:
-        logger.error(f"Image ID {args.image_id} not found in annotations")
-        return
-    
-    image_path = os.path.join(args.images_dir, image_filename)
-    if not os.path.exists(image_path):
-        logger.error(f"Image file not found: {image_path}")
-        return
-    
-    logger.info(f"Processing image: {image_filename}")
-    
-    # Run enhanced comparison
-    run_enhanced_comparison(image_path, annotations_data, args.image_id, args.output_dir, args.device)
-    
-    logger.info("Enhanced comparison completed!")
+    if args.all_images:
+        # Process all images
+        logger.info("Processing all images in directory...")
+        process_all_images(annotations_data, args.images_dir, args.output_dir, args.device)
+    else:
+        # Process single image
+        if args.image_id is None:
+            args.image_id = 1
+        
+        # Find image filename
+        image_filename = None
+        for image_info in annotations_data['images']:
+            if image_info['id'] == args.image_id:
+                image_filename = image_info['file_name']
+                break
+        
+        if not image_filename:
+            logger.error(f"Image ID {args.image_id} not found in annotations")
+            return
+        
+        image_path = os.path.join(args.images_dir, image_filename)
+        if not os.path.exists(image_path):
+            logger.error(f"Image file not found: {image_path}")
+            return
+        
+        logger.info(f"Processing single image: {image_filename}")
+        
+        # Run enhanced comparison
+        run_enhanced_comparison(image_path, annotations_data, args.image_id, args.output_dir, args.device)
+        
+        logger.info("Enhanced comparison completed!")
 
 if __name__ == "__main__":
     main()
