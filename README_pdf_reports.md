@@ -58,7 +58,14 @@ pdf_reports/
 
 Each PDF contains:
 
-### 1. **IOU Summary Statistics Table with Definitions**
+### 1. **IOU Metrics Definitions Section**
+- **Comprehensive explanations** of IOU, match criteria, and metrics
+- **Visual examples** of IOU values (1.0, 0.5, 0.0)
+- **Match criteria explanation** (IOU ≥ 0.5 threshold)
+- **Recall vs Precision** definitions for match rates
+- **Mean IOU interpretation** for segmentation quality
+
+### 2. **IOU Summary Statistics Table with Definitions**
 - Total Images Processed (with definition)
 - Mean IOU (with explanation)
 - Max IOU (with explanation)
@@ -68,7 +75,7 @@ Each PDF contains:
 - Matched Objects Counts (with definition)
 - Match Rates % (with explanation)
 
-### 2. **Large Images with Enhanced Metrics**
+### 3. **Large Images with Enhanced Metrics**
 - **LARGE comparison images** (6" x 4.5" display) for better visibility
 - Image name and title
 - **Enhanced IOU metrics table** with larger fonts and better spacing

@@ -90,8 +90,8 @@ def create_summary_table(summary):
         ['Total SAM Objects', f"{summary['total_sam']}", 'Total count of SAM-detected objects across all images'],
         ['Matched Manual Objects', f"{summary['matched_manual']}", 'Number of manual objects that have IOU > 0.5 with SAM objects'],
         ['Matched SAM Objects', f"{summary['matched_sam']}", 'Number of SAM objects that have IOU > 0.5 with manual objects'],
-        ['Manual Match Rate', f"{(summary['matched_manual']/summary['total_manual']*100):.1f}%" if summary['total_manual'] > 0 else "0%", 'Percentage of manual objects successfully matched by SAM'],
-        ['SAM Match Rate', f"{(summary['matched_sam']/summary['total_sam']*100):.1f}%" if summary['total_sam'] > 0 else "0%", 'Percentage of SAM objects that match manual annotations']
+        ['Manual Match Rate', f"{(summary['matched_manual']/summary['total_manual']*100):.1f}%" if summary['total_manual'] > 0 else "0%", 'Percentage of manual objects with IOU ≥ 0.5 (recall metric)'],
+        ['SAM Match Rate', f"{(summary['matched_sam']/summary['total_sam']*100):.1f}%" if summary['total_sam'] > 0 else "0%", 'Percentage of SAM objects with IOU ≥ 0.5 (precision metric)']
     ]
     
     table = Table(data, colWidths=[2.5*inch, 1.5*inch, 4*inch])
@@ -236,6 +236,37 @@ def generate_bucket_pdf(bucket_dir, bucket_name, output_dir):
     # Title
     title = Paragraph(f"SAM Enhanced Comparison Report - {bucket_name}", title_style)
     story.append(title)
+    story.append(Spacer(1, 20))
+    
+    # IOU Definitions section
+    definitions_heading = Paragraph("IOU Metrics Definitions", heading_style)
+    story.append(definitions_heading)
+    story.append(Spacer(1, 12))
+    
+    # Create definitions content
+    definitions_text = """
+    <b>IOU (Intersection over Union):</b> Measures overlap quality between two objects.<br/>
+    • IOU = 1.0 = Perfect match (100% overlap)<br/>
+    • IOU = 0.5 = Good match (50% overlap)<br/>
+    • IOU = 0.0 = No overlap<br/><br/>
+    
+    <b>Match Criteria:</b> Objects are considered "matched" if IOU ≥ 0.5<br/><br/>
+    
+    <b>Manual Match Rate (Recall):</b> How many manual objects SAM successfully found<br/>
+    • High rate = SAM finds most of your manual annotations<br/>
+    • Low rate = SAM misses many objects you can see<br/><br/>
+    
+    <b>SAM Match Rate (Precision):</b> How many SAM detections are valid<br/>
+    • High rate = Most SAM detections are correct<br/>
+    • Low rate = SAM has many false positives<br/><br/>
+    
+    <b>Mean IOU:</b> Average overlap quality when matches occur<br/>
+    • High mean IOU = Accurate segmentation boundaries<br/>
+    • Low mean IOU = Poor boundary alignment even when objects match
+    """
+    
+    definitions_para = Paragraph(definitions_text, getSampleStyleSheet()['Normal'])
+    story.append(definitions_para)
     story.append(Spacer(1, 20))
     
     # Summary section
