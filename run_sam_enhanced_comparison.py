@@ -16,9 +16,7 @@ import argparse
 import logging
 import gc
 from datetime import datetime
-from multiprocessing import Pool, cpu_count
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
+# Removed parallel processing imports - using sequential execution
 
 # Add the segment_anything module to path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'segment_anything'))
@@ -286,38 +284,21 @@ def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="
     # Load SAM model (vit_b for both approaches)
     sam_b = load_sam_models(device=device)
     
-    # Run all 3 approaches in parallel
-    logger.info("Running all 3 segmentation approaches in parallel...")
+    # Run all 3 approaches sequentially
+    logger.info("Running all 3 segmentation approaches sequentially...")
     
     # 1. Manual annotations (already have)
     manual_count = len(coal_annotations)
     
-    # 2. & 3. Run SAM approaches in parallel using ThreadPoolExecutor
-    roi_crop = (500, 600, 3500, 1700)
-    
-    import time
-    start_time = time.time()
-    
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        # Submit both SAM tasks
-        future_full_sam = executor.submit(run_full_sam_worker, (image, sam_b, device))
-        future_sahi_sam = executor.submit(run_sahi_sam_worker, (image, sam_b, roi_crop, device))
-        
-        # Wait for both to complete
-        logger.info("Waiting for parallel SAM processing to complete...")
-        full_sam_masks = future_full_sam.result()
-        sahi_result = future_sahi_sam.result()
-        
-        if isinstance(sahi_result, tuple):
-            sahi_masks, roi_crop = sahi_result
-        else:
-            sahi_masks = sahi_result
-            roi_crop = (500, 600, 3500, 1700)
-    
-    parallel_time = time.time() - start_time
-    logger.info(f"Parallel SAM processing completed in {parallel_time:.2f} seconds")
-    
+    # 2. Full SAM segmentation
+    logger.info("Running Full SAM segmentation...")
+    full_sam_masks = run_full_sam_segmentation(image, sam_b, device)
     full_sam_count = len(full_sam_masks)
+    
+    # 3. SAHI-enhanced SAM segmentation
+    logger.info("Running SAHI-enhanced SAM segmentation...")
+    roi_crop = (500, 600, 3500, 1700)
+    sahi_masks, roi_crop = run_sahi_sam_segmentation(image, sam_b, roi_crop, device)
     sahi_count = len(sahi_masks)
     
     # Create comprehensive visualization
