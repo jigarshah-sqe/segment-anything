@@ -168,7 +168,9 @@ def calculate_iou_metrics(manual_annotations, sam_masks, image_shape, roi_crop=N
             'mean_iou': 0.0,
             'max_iou': 0.0,
             'matched_manual': 0,
-            'matched_sam': 0
+            'matched_sam': 0,
+            'total_manual': len(manual_masks),
+            'total_sam': len(sam_masks)
         }
     
     # Convert SAHI masks to full image coordinates if they are ROI masks
@@ -373,6 +375,11 @@ def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="
     # Get manual annotations
     coal_annotations = get_coal_annotations_for_image(annotations_data, image_id)
     logger.info(f"Found {len(coal_annotations)} manual COAL annotations")
+    
+    # Skip if no manual annotations (IoU calculation not meaningful)
+    if len(coal_annotations) == 0:
+        logger.warning(f"No manual COAL annotations found for image ID {image_id}, skipping...")
+        return
     
     # Load SAM model (vit_b for both approaches)
     sam_b = load_sam_models(device=device)
