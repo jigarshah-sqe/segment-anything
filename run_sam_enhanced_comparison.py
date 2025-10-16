@@ -363,6 +363,17 @@ def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="
     """Run enhanced comparison with 3 approaches in parallel."""
     os.makedirs(output_dir, exist_ok=True)
     
+    # Check if output files already exist
+    image_name = Path(image_path).stem
+    output_path = os.path.join(output_dir, f"{image_name}_enhanced_comparison.png")
+    metrics_output_path = os.path.join(output_dir, f"{image_name}_iou_metrics.json")
+    
+    if os.path.exists(output_path) and os.path.exists(metrics_output_path):
+        logger.info(f"Output files already exist for {image_name}, skipping...")
+        logger.info(f"  - {output_path}")
+        logger.info(f"  - {metrics_output_path}")
+        return
+    
     # Load image
     logger.info(f"Loading image: {image_path}")
     image = cv2.imread(image_path)
@@ -432,9 +443,7 @@ def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="
     axes[1, 1].axis('off')
     
     # Save results directly to output directory (no subfolders)
-    os.makedirs(output_dir, exist_ok=True)
-    image_name = Path(image_path).stem
-    output_path = os.path.join(output_dir, f"{image_name}_enhanced_comparison.png")
+    # image_name and output_path already defined at the beginning of function
     plt.tight_layout()
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close()
