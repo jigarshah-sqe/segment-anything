@@ -424,7 +424,8 @@ def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="
     axes[1, 1].set_title(f'SAHI-Enhanced SAM\n({sahi_count} large coals)', fontsize=14, fontweight='bold')
     axes[1, 1].axis('off')
     
-    # Save results
+    # Save results directly to output directory (no subfolders)
+    os.makedirs(output_dir, exist_ok=True)
     image_name = Path(image_path).stem
     output_path = os.path.join(output_dir, f"{image_name}_enhanced_comparison.png")
     plt.tight_layout()
@@ -452,7 +453,7 @@ def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="
     logger.info(f"Matched SAM objects:    {iou_metrics['matched_sam']}/{iou_metrics['total_sam']}")
     logger.info("="*60)
     
-    # Save IoU metrics to JSON
+    # Save IoU metrics to JSON directly in output directory
     metrics_output_path = os.path.join(output_dir, f"{image_name}_iou_metrics.json")
     with open(metrics_output_path, 'w') as f:
         json.dump(iou_metrics, f, indent=2)
@@ -552,31 +553,50 @@ def process_all_images(base_dir, output_base_dir, device="cpu"):
 def main():
     parser = argparse.ArgumentParser(description="Enhanced SAM comparison for COAL segmentation")
     parser.add_argument("--image-id", type=int, default=None, help="Single image ID to process (optional)")
-    parser.add_argument("--annotations", default="sample/annotations/instances_default.json", 
-                       help="Path to annotations JSON file")
-    parser.add_argument("--images-dir", default="sample/images/default", 
-                       help="Path to images directory")
+    parser.add_argument("--bucket", default="15_18", choices=['15_18', '18_5', '5_9', '9_15'],
+                       help="Bucket to process for single image")
+    parser.add_argument("--base-dir", default="sample", 
+                       help="Base directory containing bucket folders")
     parser.add_argument("--output-dir", default="./sam_enhanced_output", 
                        help="Output directory for results")
     parser.add_argument("--device", default="cpu", help="Device to run on (cuda/cpu)")
     parser.add_argument("--all-images", action="store_true", 
-                       help="Process all images in the directory")
+                       help="Process all images across all buckets")
     
     args = parser.parse_args()
     
-    # Load annotations
-    logger.info(f"Loading annotations from: {args.annotations}")
-    with open(args.annotations, 'r') as f:
-        annotations_data = json.load(f)
-    
     if args.all_images:
-        # Process all images
-        logger.info("Processing all images in directory...")
-        process_all_images(annotations_data, args.images_dir, args.output_dir, args.device)
+        # Process all images across all buckets
+        logger.info("Processing all images across all buckets...")
+        process_all_images(args.base_dir, args.output_dir, args.device)
     else:
-        # Process single image
+        # Process single image from specified bucket
         if args.image_id is None:
             args.image_id = 1
+        
+        # Paths for the specified bucket
+        bucket_dir = os.path.join(args.base_dir, args.bucket)
+        annotations_file = os.path.join(bucket_dir, 'annotations', 'instances_default.json')
+        images_dir = os.path.join(bucket_dir, 'images', 'default')
+        bucket_output_dir = os.path.join(args.output_dir, args.bucket)
+        
+        # Check if bucket exists
+        if not os.path.exists(bucket_dir):
+            logger.error(f"Bucket {args.bucket} not found at {bucket_dir}")
+            return
+            
+        if not os.path.exists(annotations_file):
+            logger.error(f"Annotations file not found: {annotations_file}")
+            return
+            
+        if not os.path.exists(images_dir):
+            logger.error(f"Images directory not found: {images_dir}")
+            return
+        
+        # Load annotations
+        logger.info(f"Loading annotations from: {annotations_file}")
+        with open(annotations_file, 'r') as f:
+            annotations_data = json.load(f)
         
         # Find image filename
         image_filename = None
@@ -586,18 +606,18 @@ def main():
                 break
         
         if not image_filename:
-            logger.error(f"Image ID {args.image_id} not found in annotations")
+            logger.error(f"Image ID {args.image_id} not found in annotations for bucket {args.bucket}")
             return
         
-        image_path = os.path.join(args.images_dir, image_filename)
+        image_path = os.path.join(images_dir, image_filename)
         if not os.path.exists(image_path):
             logger.error(f"Image file not found: {image_path}")
             return
         
-        logger.info(f"Processing single image: {image_filename}")
+        logger.info(f"Processing single image from bucket {args.bucket}: {image_filename}")
         
-        # Run enhanced comparison
-        run_enhanced_comparison(image_path, annotations_data, args.image_id, args.output_dir, args.device)
+        # Run enhanced comparison - save directly to bucket output dir
+        run_enhanced_comparison(image_path, annotations_data, args.image_id, bucket_output_dir, args.device)
         
         logger.info("Enhanced comparison completed!")
 
