@@ -119,6 +119,101 @@ def calculate_maximum_diameter_from_points(points):
     dists = np.linalg.norm(points[:, None] - points, axis=-1)
     return float(np.max(dists))
 
+def polygon_to_mask(polygon_points, image_shape):
+    """Convert polygon points to binary mask using OpenCV"""
+    import cv2
+    
+    # Create a blank mask
+    mask = np.zeros(image_shape[:2], dtype=np.uint8)
+    
+    # Convert polygon points to integer coordinates
+    polygon_points = np.array(polygon_points, dtype=np.int32)
+    
+    # Fill the polygon with white (255)
+    cv2.fillPoly(mask, [polygon_points], 255)
+    
+    # Convert to boolean mask
+    return mask.astype(bool)
+
+def calculate_iou(mask1, mask2):
+    """Calculate Intersection over Union (IoU) between two binary masks"""
+    intersection = np.logical_and(mask1, mask2)
+    union = np.logical_or(mask1, mask2)
+    
+    intersection_area = np.sum(intersection)
+    union_area = np.sum(union)
+    
+    if union_area == 0:
+        return 0.0
+    
+    iou = intersection_area / union_area
+    return float(iou)
+
+def calculate_iou_metrics(manual_annotations, sam_masks, image_shape, roi_crop=None):
+    """Calculate IoU metrics between manual annotations and SAM predictions"""
+    # Convert manual annotations to masks
+    manual_masks = []
+    for annotation in manual_annotations:
+        if 'segmentation' in annotation and annotation['segmentation']:
+            segmentation = annotation['segmentation'][0]
+            if len(segmentation) >= 6:
+                points = np.array(segmentation).reshape(-1, 2)
+                mask = polygon_to_mask(points, image_shape)
+                manual_masks.append(mask)
+    
+    if not manual_masks or not sam_masks:
+        return {
+            'best_iou_per_manual': [],
+            'best_iou_per_sam': [],
+            'mean_iou': 0.0,
+            'max_iou': 0.0,
+            'matched_manual': 0,
+            'matched_sam': 0
+        }
+    
+    # Convert SAHI masks to full image coordinates if they are ROI masks
+    full_sam_masks = []
+    if roi_crop is not None:
+        x1, y1, x2, y2 = roi_crop
+        for roi_mask in sam_masks:
+            # Create full image mask from ROI mask
+            full_mask = np.zeros(image_shape[:2], dtype=bool)
+            full_mask[y1:y2, x1:x2] = roi_mask
+            full_sam_masks.append(full_mask)
+    else:
+        full_sam_masks = sam_masks
+    
+    # Calculate IoU between each manual annotation and each SAM prediction
+    iou_matrix = np.zeros((len(manual_masks), len(full_sam_masks)))
+    
+    for i, manual_mask in enumerate(manual_masks):
+        for j, sam_mask in enumerate(full_sam_masks):
+            iou = calculate_iou(manual_mask, sam_mask)
+            iou_matrix[i, j] = iou
+    
+    # Find best matches
+    best_iou_per_manual = np.max(iou_matrix, axis=1)
+    best_iou_per_sam = np.max(iou_matrix, axis=0)
+    
+    # Count matches (IoU > 0.5 threshold)
+    matched_manual = np.sum(best_iou_per_manual > 0.5)
+    matched_sam = np.sum(best_iou_per_sam > 0.5)
+    
+    # Calculate overall metrics
+    mean_iou = np.mean(best_iou_per_manual) if len(best_iou_per_manual) > 0 else 0.0
+    max_iou = np.max(iou_matrix) if iou_matrix.size > 0 else 0.0
+    
+    return {
+        'best_iou_per_manual': best_iou_per_manual.tolist(),
+        'best_iou_per_sam': best_iou_per_sam.tolist(),
+        'mean_iou': float(mean_iou),
+        'max_iou': float(max_iou),
+        'matched_manual': int(matched_manual),
+        'matched_sam': int(matched_sam),
+        'total_manual': len(manual_masks),
+        'total_sam': len(sam_masks)
+    }
+
 def get_coal_annotations_for_image(annotations_data, image_id):
     """Get COAL annotations for a specific image."""
     coal_annotations = []
@@ -338,6 +433,10 @@ def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="
     
     logger.info(f"Saved enhanced comparison to: {output_path}")
     
+    # Calculate IoU metrics
+    logger.info("Calculating IoU metrics...")
+    iou_metrics = calculate_iou_metrics(coal_annotations, sahi_masks, image.shape, roi_crop)
+    
     # Print summary
     logger.info("="*60)
     logger.info("SEGMENTATION COMPARISON SUMMARY")
@@ -345,6 +444,19 @@ def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="
     logger.info(f"Manual annotations:     {manual_count:3d} COAL objects")
     logger.info(f"SAHI-enhanced SAM:      {sahi_count:3d} large coals")
     logger.info("="*60)
+    logger.info("IoU METRICS")
+    logger.info("="*60)
+    logger.info(f"Mean IoU:               {iou_metrics['mean_iou']:.3f}")
+    logger.info(f"Max IoU:                 {iou_metrics['max_iou']:.3f}")
+    logger.info(f"Matched manual objects: {iou_metrics['matched_manual']}/{iou_metrics['total_manual']}")
+    logger.info(f"Matched SAM objects:    {iou_metrics['matched_sam']}/{iou_metrics['total_sam']}")
+    logger.info("="*60)
+    
+    # Save IoU metrics to JSON
+    metrics_output_path = os.path.join(output_dir, f"{image_name}_iou_metrics.json")
+    with open(metrics_output_path, 'w') as f:
+        json.dump(iou_metrics, f, indent=2)
+    logger.info(f"Saved IoU metrics to: {metrics_output_path}")
     
     # Clean up memory
     del sam_b
