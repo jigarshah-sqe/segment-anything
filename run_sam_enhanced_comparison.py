@@ -359,16 +359,16 @@ def run_sahi_sam_segmentation(image, sam_b, roi_crop=(1000, 20, 2986, 2118), dev
     logger.info(f"SAHI SAM found {len(final_masks)} large coal segments")
     return final_masks, roi_crop
 
-def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="./sam_enhanced_output", device="cpu"):
+def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="./sam_enhanced_output", device="cpu", force=False):
     """Run enhanced comparison with 3 approaches in parallel."""
     os.makedirs(output_dir, exist_ok=True)
     
-    # Check if output files already exist
+    # Check if output files already exist (unless force is True)
     image_name = Path(image_path).stem
     output_path = os.path.join(output_dir, f"{image_name}_enhanced_comparison.png")
     metrics_output_path = os.path.join(output_dir, f"{image_name}_iou_metrics.json")
     
-    if os.path.exists(output_path) and os.path.exists(metrics_output_path):
+    if not force and os.path.exists(output_path) and os.path.exists(metrics_output_path):
         logger.info(f"Output files already exist for {image_name}, skipping...")
         logger.info(f"  - {output_path}")
         logger.info(f"  - {metrics_output_path}")
@@ -481,7 +481,7 @@ def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-def process_all_images(base_dir, output_base_dir, device="cpu"):
+def process_all_images(base_dir, output_base_dir, device="cpu", force=False):
     """Process all images across all 4 buckets."""
     
     buckets = ['15_18', '18_5', '5_9', '9_15']
@@ -545,7 +545,7 @@ def process_all_images(base_dir, output_base_dir, device="cpu"):
                 logger.info(f"Image ID: {image_id}")
                 
                 # Run enhanced comparison - save directly to bucket output dir
-                run_enhanced_comparison(image_path, annotations_data, image_id, bucket_output_dir, device)
+                run_enhanced_comparison(image_path, annotations_data, image_id, bucket_output_dir, device, force=force)
                 
                 bucket_processed += 1
                 logger.info(f"✅ Successfully processed: {filename}")
@@ -578,13 +578,15 @@ def main():
     parser.add_argument("--device", default="cpu", help="Device to run on (cuda/cpu)")
     parser.add_argument("--all-images", action="store_true", 
                        help="Process all images across all buckets")
+    parser.add_argument("--force", action="store_true", 
+                       help="Force re-processing even if output files exist")
     
     args = parser.parse_args()
     
     if args.all_images:
         # Process all images across all buckets
         logger.info("Processing all images across all buckets...")
-        process_all_images(args.base_dir, args.output_dir, args.device)
+        process_all_images(args.base_dir, args.output_dir, args.device, args.force)
     else:
         # Process single image from specified bucket
         if args.image_id is None:
@@ -633,7 +635,7 @@ def main():
         logger.info(f"Processing single image from bucket {args.bucket}: {image_filename}")
         
         # Run enhanced comparison - save directly to bucket output dir
-        run_enhanced_comparison(image_path, annotations_data, args.image_id, bucket_output_dir, args.device)
+        run_enhanced_comparison(image_path, annotations_data, args.image_id, bucket_output_dir, args.device, force=args.force)
         
         logger.info("Enhanced comparison completed!")
 
