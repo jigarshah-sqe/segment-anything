@@ -176,7 +176,7 @@ def run_sahi_sam_worker(args):
         logger.error(f"SAHI SAM worker failed: {e}")
         return [], roi_crop
 
-def run_sahi_sam_segmentation(image, sam_b, roi_crop=(956, 20, 2986, 2118), device="cpu"):
+def run_sahi_sam_segmentation(image, sam_b, roi_crop=(1000, 20, 2986, 2118), device="cpu"):
     """Run SAHI-enhanced SAM segmentation with ROI and tiling.
     
     ROI coordinates: (x_min, y_min, x_max, y_max)
@@ -292,7 +292,7 @@ def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="
     
     # 2. SAHI-enhanced SAM segmentation only
     logger.info("Running SAHI-enhanced SAM segmentation...")
-    roi_crop = (956, 20, 2986, 2118)
+    roi_crop = (1000, 20, 2986, 2118)
     sahi_masks, roi_crop = run_sahi_sam_segmentation(image, sam_b, roi_crop, device)
     sahi_count = len(sahi_masks)
     
@@ -320,10 +320,14 @@ def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="
     axes[1, 0].set_title('SAHI ROI Region\n(Yellow rectangle)', fontsize=14, fontweight='bold')
     axes[1, 0].axis('off')
     
-    # SAHI-enhanced SAM segmentation
+    # SAHI-enhanced SAM segmentation (map ROI masks to full image)
     axes[1, 1].imshow(image)
-    for i, mask in enumerate(sahi_masks):
-        show_mask(mask, axes[1, 1], random_color=True, alpha=0.6)
+    x1, y1, x2, y2 = roi_crop
+    for i, roi_mask in enumerate(sahi_masks):
+        # Create full image mask from ROI mask
+        full_mask = np.zeros((image.shape[0], image.shape[1]), dtype=bool)
+        full_mask[y1:y2, x1:x2] = roi_mask
+        show_mask(full_mask, axes[1, 1], random_color=True, alpha=0.6)
     axes[1, 1].set_title(f'SAHI-Enhanced SAM\n({sahi_count} large coals)', fontsize=14, fontweight='bold')
     axes[1, 1].axis('off')
     
