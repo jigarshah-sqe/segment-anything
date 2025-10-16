@@ -342,15 +342,10 @@ def run_sahi_sam_segmentation(image, sam_b, roi_crop=(1000, 20, 2986, 2118), dev
                 
                 all_masks_in_roi.append(full_roi_mask)
     
-    # Deduplicate masks with memory optimization
+    # Deduplicate masks (keep all masks for processing)
     final_masks = []
-    max_masks = 100  # Limit total masks to prevent RAM overflow
     
     for mask in all_masks_in_roi:
-        if len(final_masks) >= max_masks:
-            logger.warning(f"Memory optimization: Limiting to {max_masks} masks to prevent RAM overflow")
-            break
-            
         duplicate = False
         for fm in final_masks:
             inter = np.logical_and(mask, fm)
@@ -453,7 +448,7 @@ def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="
     
     # Update title to show actual count vs displayed count
     if len(sahi_masks) > max_display_masks:
-        axes[1, 1].set_title(f'SAHI-Enhanced SAM\n({sahi_count} total, showing {len(display_masks)})', fontsize=14, fontweight='bold')
+        axes[1, 1].set_title(f'SAHI-Enhanced SAM\n({sahi_count} total, displaying {len(display_masks)} for visualization)', fontsize=14, fontweight='bold')
     else:
         axes[1, 1].set_title(f'SAHI-Enhanced SAM\n({sahi_count} large coals)', fontsize=14, fontweight='bold')
     axes[1, 1].axis('off')
@@ -463,12 +458,6 @@ def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="
     plt.tight_layout()
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close()
-    
-    # Memory cleanup
-    del sahi_masks
-    del display_masks
-    import gc
-    gc.collect()
     
     logger.info(f"Saved enhanced comparison to: {output_path}")
     
