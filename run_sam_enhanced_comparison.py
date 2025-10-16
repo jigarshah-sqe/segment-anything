@@ -58,19 +58,14 @@ def download_sam_checkpoint(model_type="vit_b", checkpoint_dir="./checkpoints"):
     return checkpoint_path
 
 def load_sam_models(device="cpu"):
-    """Load both SAM models for comparison."""
-    # Load vit_b for SAHI approach
+    """Load SAM vit_b model for both approaches."""
+    # Load vit_b for both approaches (faster processing)
     checkpoint_b = download_sam_checkpoint("vit_b")
     sam_b = sam_model_registry["vit_b"](checkpoint=checkpoint_b)
     sam_b.to(device=device)
     
-    # Load vit_h for full approach
-    checkpoint_h = download_sam_checkpoint("vit_h")
-    sam_h = sam_model_registry["vit_h"](checkpoint=checkpoint_h)
-    sam_h.to(device=device)
-    
-    logger.info(f"SAM models loaded on device: {device}")
-    return sam_b, sam_h
+    logger.info(f"SAM vit_b model loaded on device: {device}")
+    return sam_b
 
 def show_mask(mask, ax, random_color=False, alpha=0.6):
     """Display mask on axis."""
@@ -288,8 +283,8 @@ def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="
     coal_annotations = get_coal_annotations_for_image(annotations_data, image_id)
     logger.info(f"Found {len(coal_annotations)} manual COAL annotations")
     
-    # Load SAM models
-    sam_b, sam_h = load_sam_models(device=device)
+    # Load SAM model (vit_b for both approaches)
+    sam_b = load_sam_models(device=device)
     
     # Run all 3 approaches in parallel
     logger.info("Running all 3 segmentation approaches in parallel...")
@@ -305,7 +300,7 @@ def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="
     
     with ThreadPoolExecutor(max_workers=2) as executor:
         # Submit both SAM tasks
-        future_full_sam = executor.submit(run_full_sam_worker, (image, sam_h, device))
+        future_full_sam = executor.submit(run_full_sam_worker, (image, sam_b, device))
         future_sahi_sam = executor.submit(run_sahi_sam_worker, (image, sam_b, roi_crop, device))
         
         # Wait for both to complete
@@ -390,7 +385,7 @@ def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="
     logger.info("="*60)
     
     # Clean up memory
-    del sam_b, sam_h
+    del sam_b
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
