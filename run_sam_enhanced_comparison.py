@@ -464,61 +464,89 @@ def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-def process_all_images(annotations_data, images_dir, output_dir, device="cpu"):
-    """Process all images in the images directory."""
+def process_all_images(base_dir, output_base_dir, device="cpu"):
+    """Process all images across all 4 buckets."""
     
-    # Get all image files
-    image_files = []
-    for root, dirs, files in os.walk(images_dir):
-        for file in files:
-            if file.lower().endswith(('.jpg', '.jpeg', '.png')):
-                image_files.append(os.path.join(root, file))
+    buckets = ['15_18', '18_5', '5_9', '9_15']
+    total_processed = 0
+    total_failed = 0
     
-    logger.info(f"Found {len(image_files)} images to process")
-    
-    # Create mapping from filename to image_id
-    filename_to_id = {}
-    for image_info in annotations_data['images']:
-        filename_to_id[image_info['file_name']] = image_info['id']
-    
-    processed_count = 0
-    failed_count = 0
-    
-    for i, image_path in enumerate(image_files, 1):
-        try:
-            # Get relative path and filename
-            rel_path = os.path.relpath(image_path, images_dir)
-            filename = os.path.basename(image_path)
-            
-            # Find corresponding image_id
-            image_id = filename_to_id.get(rel_path)
-            if image_id is None:
-                logger.warning(f"No annotations found for {rel_path}, skipping...")
-                continue
-            
-            logger.info(f"Processing image {i}/{len(image_files)}: {filename}")
-            logger.info(f"Image ID: {image_id}")
-            
-            # Create output directory for this image
-            image_output_dir = os.path.join(output_dir, os.path.splitext(filename)[0])
-            
-            # Run enhanced comparison
-            run_enhanced_comparison(image_path, annotations_data, image_id, image_output_dir, device)
-            
-            processed_count += 1
-            logger.info(f"✅ Successfully processed: {filename}")
-            
-        except Exception as e:
-            failed_count += 1
-            logger.error(f"❌ Failed to process {image_path}: {e}")
+    for bucket in buckets:
+        logger.info(f"Processing bucket: {bucket}")
+        
+        # Paths for this bucket
+        bucket_dir = os.path.join(base_dir, bucket)
+        annotations_file = os.path.join(bucket_dir, 'annotations', 'instances_default.json')
+        images_dir = os.path.join(bucket_dir, 'images', 'default')
+        bucket_output_dir = os.path.join(output_base_dir, bucket)
+        
+        # Check if bucket exists
+        if not os.path.exists(bucket_dir):
+            logger.warning(f"Bucket {bucket} not found, skipping...")
             continue
+            
+        if not os.path.exists(annotations_file):
+            logger.warning(f"Annotations file not found for {bucket}, skipping...")
+            continue
+            
+        if not os.path.exists(images_dir):
+            logger.warning(f"Images directory not found for {bucket}, skipping...")
+            continue
+        
+        # Load annotations for this bucket
+        logger.info(f"Loading annotations from: {annotations_file}")
+        with open(annotations_file, 'r') as f:
+            annotations_data = json.load(f)
+        
+        # Get all image files in this bucket
+        image_files = []
+        for file in os.listdir(images_dir):
+            if file.lower().endswith(('.jpg', '.jpeg', '.png')):
+                image_files.append(os.path.join(images_dir, file))
+        
+        logger.info(f"Found {len(image_files)} images in bucket {bucket}")
+        
+        # Create mapping from filename to image_id
+        filename_to_id = {}
+        for image_info in annotations_data['images']:
+            filename_to_id[image_info['file_name']] = image_info['id']
+        
+        bucket_processed = 0
+        bucket_failed = 0
+        
+        for i, image_path in enumerate(image_files, 1):
+            try:
+                filename = os.path.basename(image_path)
+                
+                # Find corresponding image_id
+                image_id = filename_to_id.get(filename)
+                if image_id is None:
+                    logger.warning(f"No annotations found for {filename}, skipping...")
+                    continue
+                
+                logger.info(f"Processing {bucket} image {i}/{len(image_files)}: {filename}")
+                logger.info(f"Image ID: {image_id}")
+                
+                # Run enhanced comparison - save directly to bucket output dir
+                run_enhanced_comparison(image_path, annotations_data, image_id, bucket_output_dir, device)
+                
+                bucket_processed += 1
+                logger.info(f"✅ Successfully processed: {filename}")
+                
+            except Exception as e:
+                bucket_failed += 1
+                logger.error(f"❌ Failed to process {image_path}: {e}")
+                continue
+        
+        logger.info(f"Bucket {bucket} summary: {bucket_processed} processed, {bucket_failed} failed")
+        total_processed += bucket_processed
+        total_failed += bucket_failed
     
     logger.info("="*60)
     logger.info("BATCH PROCESSING SUMMARY")
     logger.info("="*60)
-    logger.info(f"Total images found: {len(image_files)}")
-    logger.info(f"Successfully processed: {processed_count}")
-    logger.info(f"Failed: {failed_count}")
+    logger.info(f"Successfully processed: {total_processed}")
+    logger.info(f"Failed: {total_failed}")
     logger.info("="*60)
 
 def main():
