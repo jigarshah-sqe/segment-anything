@@ -487,6 +487,8 @@ def process_all_images(base_dir, output_base_dir, device="cpu", force=False):
     buckets = ['15_18', '18_5', '5_9', '9_15']
     total_processed = 0
     total_failed = 0
+    total_skipped = 0
+    total_no_annotations = 0
     
     for bucket in buckets:
         logger.info(f"Processing bucket: {bucket}")
@@ -530,6 +532,10 @@ def process_all_images(base_dir, output_base_dir, device="cpu", force=False):
         
         bucket_processed = 0
         bucket_failed = 0
+        bucket_skipped = 0
+        bucket_no_annotations = 0
+        
+        logger.info(f"Starting processing of {len(image_files)} images in bucket {bucket}")
         
         for i, image_path in enumerate(image_files, 1):
             try:
@@ -539,10 +545,21 @@ def process_all_images(base_dir, output_base_dir, device="cpu", force=False):
                 image_id = filename_to_id.get(filename)
                 if image_id is None:
                     logger.warning(f"No annotations found for {filename}, skipping...")
+                    bucket_no_annotations += 1
                     continue
                 
                 logger.info(f"Processing {bucket} image {i}/{len(image_files)}: {filename}")
                 logger.info(f"Image ID: {image_id}")
+                
+                # Check if we should skip due to existing files
+                image_name = Path(image_path).stem
+                output_path = os.path.join(bucket_output_dir, f"{image_name}_enhanced_comparison.png")
+                metrics_output_path = os.path.join(bucket_output_dir, f"{image_name}_iou_metrics.json")
+                
+                if not force and os.path.exists(output_path) and os.path.exists(metrics_output_path):
+                    logger.info(f"⏭️  Skipping {filename} - output files already exist")
+                    bucket_skipped += 1
+                    continue
                 
                 # Run enhanced comparison - save directly to bucket output dir
                 run_enhanced_comparison(image_path, annotations_data, image_id, bucket_output_dir, device, force=force)
@@ -555,15 +572,20 @@ def process_all_images(base_dir, output_base_dir, device="cpu", force=False):
                 logger.error(f"❌ Failed to process {image_path}: {e}")
                 continue
         
-        logger.info(f"Bucket {bucket} summary: {bucket_processed} processed, {bucket_failed} failed")
+        logger.info(f"Bucket {bucket} summary: {bucket_processed} processed, {bucket_skipped} skipped, {bucket_no_annotations} no annotations, {bucket_failed} failed")
         total_processed += bucket_processed
         total_failed += bucket_failed
+        total_skipped += bucket_skipped
+        total_no_annotations += bucket_no_annotations
     
     logger.info("="*60)
     logger.info("BATCH PROCESSING SUMMARY")
     logger.info("="*60)
     logger.info(f"Successfully processed: {total_processed}")
-    logger.info(f"Failed: {total_failed}")
+    logger.info(f"Skipped (files exist):   {total_skipped}")
+    logger.info(f"No annotations:         {total_no_annotations}")
+    logger.info(f"Failed:                 {total_failed}")
+    logger.info(f"Total images:            {total_processed + total_skipped + total_no_annotations + total_failed}")
     logger.info("="*60)
 
 def main():
