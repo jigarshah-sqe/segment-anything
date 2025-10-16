@@ -16,6 +16,9 @@ import argparse
 import logging
 import gc
 from datetime import datetime
+from multiprocessing import Pool, cpu_count
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 # Add the segment_anything module to path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'segment_anything'))
@@ -162,8 +165,31 @@ def run_full_sam_segmentation(image, sam_h, device="cpu"):
     logger.info(f"Filtered to {len(filtered_masks)} high-quality segments")
     return filtered_masks
 
-def run_sahi_sam_segmentation(image, sam_b, roi_crop=(500, 0, 3500, 2160), device="cpu"):
-    """Run SAHI-enhanced SAM segmentation with ROI and tiling."""
+def run_full_sam_worker(args):
+    """Worker function for full SAM segmentation."""
+    image, sam_h, device = args
+    try:
+        return run_full_sam_segmentation(image, sam_h, device)
+    except Exception as e:
+        logger.error(f"Full SAM worker failed: {e}")
+        return []
+
+def run_sahi_sam_worker(args):
+    """Worker function for SAHI SAM segmentation."""
+    image, sam_b, roi_crop, device = args
+    try:
+        return run_sahi_sam_segmentation(image, sam_b, roi_crop, device)
+    except Exception as e:
+        logger.error(f"SAHI SAM worker failed: {e}")
+        return [], roi_crop
+
+def run_sahi_sam_segmentation(image, sam_b, roi_crop=(500, 600, 3500, 1700), device="cpu"):
+    """Run SAHI-enhanced SAM segmentation with ROI and tiling.
+    
+    ROI coordinates: (x_min, y_min, x_max, y_max)
+    - Reduced ROI to focus on coal on conveyor belt only
+    - Excludes conveyor structure and empty areas
+    """
     logger.info("Running SAHI-enhanced SAM segmentation...")
     
     # Extract ROI
@@ -246,7 +272,7 @@ def run_sahi_sam_segmentation(image, sam_b, roi_crop=(500, 0, 3500, 2160), devic
     return final_masks, roi_crop
 
 def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="./sam_enhanced_output", device="cpu"):
-    """Run enhanced comparison with 3 approaches."""
+    """Run enhanced comparison with 3 approaches in parallel."""
     os.makedirs(output_dir, exist_ok=True)
     
     # Load image
@@ -265,18 +291,38 @@ def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="
     # Load SAM models
     sam_b, sam_h = load_sam_models(device=device)
     
-    # Run all 3 approaches
-    logger.info("Running all 3 segmentation approaches...")
+    # Run all 3 approaches in parallel
+    logger.info("Running all 3 segmentation approaches in parallel...")
     
     # 1. Manual annotations (already have)
     manual_count = len(coal_annotations)
     
-    # 2. Full SAM segmentation
-    full_sam_masks = run_full_sam_segmentation(image, sam_h, device)
-    full_sam_count = len(full_sam_masks)
+    # 2. & 3. Run SAM approaches in parallel using ThreadPoolExecutor
+    roi_crop = (500, 600, 3500, 1700)
     
-    # 3. SAHI-enhanced SAM segmentation
-    sahi_masks, roi_crop = run_sahi_sam_segmentation(image, sam_b, device=device)
+    import time
+    start_time = time.time()
+    
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        # Submit both SAM tasks
+        future_full_sam = executor.submit(run_full_sam_worker, (image, sam_h, device))
+        future_sahi_sam = executor.submit(run_sahi_sam_worker, (image, sam_b, roi_crop, device))
+        
+        # Wait for both to complete
+        logger.info("Waiting for parallel SAM processing to complete...")
+        full_sam_masks = future_full_sam.result()
+        sahi_result = future_sahi_sam.result()
+        
+        if isinstance(sahi_result, tuple):
+            sahi_masks, roi_crop = sahi_result
+        else:
+            sahi_masks = sahi_result
+            roi_crop = (500, 600, 3500, 1700)
+    
+    parallel_time = time.time() - start_time
+    logger.info(f"Parallel SAM processing completed in {parallel_time:.2f} seconds")
+    
+    full_sam_count = len(full_sam_masks)
     sahi_count = len(sahi_masks)
     
     # Create comprehensive visualization
@@ -351,7 +397,7 @@ def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="
 
 def main():
     parser = argparse.ArgumentParser(description="Enhanced SAM comparison for COAL segmentation")
-    parser.add_argument("--image-id", type=int, default=6, help="Image ID to process")
+    parser.add_argument("--image-id", type=int, default=1, help="Image ID to process")
     parser.add_argument("--annotations", default="sample/annotations/instances_default.json", 
                        help="Path to annotations JSON file")
     parser.add_argument("--images-dir", default="sample/images/default", 
