@@ -183,8 +183,6 @@ def run_sahi_sam_segmentation(image, sam_b, roi_crop=(1000, 20, 2986, 2118), dev
     - Reduced ROI to focus on coal on conveyor belt only
     - Excludes conveyor structure and empty areas
     """
-    logger.info("Running SAHI-enhanced SAM segmentation...")
-    
     # Extract ROI
     x1_roi, y1_roi, x2_roi, y2_roi = roi_crop
     roi_img = image[y1_roi:y2_roi, x1_roi:x2_roi]
