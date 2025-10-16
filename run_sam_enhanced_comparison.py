@@ -176,7 +176,7 @@ def run_sahi_sam_worker(args):
         logger.error(f"SAHI SAM worker failed: {e}")
         return [], roi_crop
 
-def run_sahi_sam_segmentation(image, sam_b, roi_crop=(500, 600, 3500, 1700), device="cpu"):
+def run_sahi_sam_segmentation(image, sam_b, roi_crop=(956, 20, 2986, 2118), device="cpu"):
     """Run SAHI-enhanced SAM segmentation with ROI and tiling.
     
     ROI coordinates: (x_min, y_min, x_max, y_max)
@@ -297,7 +297,7 @@ def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="
     
     # 3. SAHI-enhanced SAM segmentation
     logger.info("Running SAHI-enhanced SAM segmentation...")
-    roi_crop = (500, 600, 3500, 1700)
+    roi_crop = (956, 20, 2986, 2118)
     sahi_masks, roi_crop = run_sahi_sam_segmentation(image, sam_b, roi_crop, device)
     sahi_count = len(sahi_masks)
     
