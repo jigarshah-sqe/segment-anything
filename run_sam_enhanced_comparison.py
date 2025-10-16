@@ -358,6 +358,12 @@ def run_sahi_sam_segmentation(image, sam_b, roi_crop=(1000, 20, 2986, 2118), dev
             final_masks.append(mask)
     
     logger.info(f"SAHI SAM found {len(final_masks)} large coal segments")
+    
+    # Clean up intermediate arrays
+    del all_masks_in_roi
+    import gc
+    gc.collect()
+    
     return final_masks, roi_crop
 
 def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="./sam_enhanced_output", device="cpu", force=False):
@@ -464,6 +470,14 @@ def run_enhanced_comparison(image_path, annotations_data, image_id, output_dir="
     # Calculate IoU metrics
     logger.info("Calculating IoU metrics...")
     iou_metrics = calculate_iou_metrics(coal_annotations, sahi_masks, image.shape, roi_crop)
+    
+    # Memory cleanup after processing this image
+    logger.info("Cleaning up memory...")
+    del sahi_masks
+    del display_masks
+    del image
+    import gc
+    gc.collect()
     
     # Print summary
     logger.info("="*60)
@@ -578,9 +592,16 @@ def process_all_images(base_dir, output_base_dir, device="cpu", force=False):
                 bucket_processed += 1
                 logger.info(f"✅ Successfully processed: {filename}")
                 
+                # Force memory cleanup between images in batch processing
+                import gc
+                gc.collect()
+                
             except Exception as e:
                 bucket_failed += 1
                 logger.error(f"❌ Failed to process {image_path}: {e}")
+                # Cleanup memory even on failure
+                import gc
+                gc.collect()
                 continue
         
         logger.info(f"Bucket {bucket} summary: {bucket_processed} processed, {bucket_skipped} skipped, {bucket_no_annotations} no annotations, {bucket_failed} failed")
